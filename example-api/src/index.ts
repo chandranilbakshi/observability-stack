@@ -58,4 +58,4 @@ app.get("/orders", async (req, res) => {
 const PORT = Number(process.env.PORT) || 3001;
 app.listen(PORT, () => {
   logger.info("API started", { port: PORT });
-});
+}):
