@@ -1,0 +1,107 @@
+version: "3.9"
+
+networks:
+  observability:
+    driver: bridge
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  tempo-data:
+  loki-data:
+
+services:
+
+  # ── OTel Collector ────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.99.0
+    container_name: otel-collector
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus metrics scrape endpoint (collector's own metrics)
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ── Tempo (traces) ────────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP API (Grafana queries here)
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ── Loki (logs) ───────────────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.7
+    container_name: loki
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ── Prometheus (metrics) ──────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ── Grafana (UI) ──────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin   # remove in prod
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ── Example API (optional — your real API replaces this) ──────
+  example-api:
+    build: ./example-api
+    container_name: example-api
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=sarwam-api
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=dev
+      - PORT=3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      - otel-collector
+    networks:
+      - observability
+    restart: unless-stopped
