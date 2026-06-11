@@ -14,7 +14,7 @@ ingester:
 
 compactor:
   compaction:
-    block_retention: 1h
+    block_retention: 1h # keep 168h (1 week) or more for production
 
 storage:
   trace:
@@ -22,7 +22,7 @@ storage:
     wal:
       path: /var/tempo/wal
     local:
-      path: /var/tempo/blocks
+      path: /var/tempo/blocks # point it to an s3 in production
 
 metrics_generator:
   registry:
